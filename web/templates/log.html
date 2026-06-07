@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Change Log</h2>
+<p class="quiet">A natural-language timeline of admin changes and their direct impact on people and tasks.</p>
+
+{% if rows %}
+<table>
+  <thead>
+    <tr>
+      <th>When</th>
+      <th>Type</th>
+      <th>Person</th>
+      <th>Task</th>
+      <th>Entry</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>{{ row.created.strftime('%Y-%m-%d %H:%M:%S') if row.created else '-' }}</td>
+      <td>{{ row.category|replace('-', ' ')|title }}</td>
+      <td>{{ row.participant }}</td>
+      <td>{{ row.task }}</td>
+      <td>{{ row.message }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No log entries yet.</p>
+{% endif %}
+{% endblock %}

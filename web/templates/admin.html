@@ -1,0 +1,814 @@
+{% extends "base.html" %}
+{% from "_messaging_icons.html" import messaging_icon %}
+{% block title %}Admin - Zomerkamp 2026{% endblock %}
+{% block content %}
+{% set day_names = {1: "Wednesday", 2: "Thursday", 3: "Friday", 4: "Saturday"} %}
+<h2>Admin Panel</h2>
+<p class="intro">Manage unavailability and assignments (app3 flow), and inspect people/tasks at a glance.</p>
+
+<div class="stats">
+  <div class="stat">
+    <strong>{{ summary.participants }}</strong>
+    <span>participants</span>
+  </div>
+  <div class="stat">
+    <strong>{{ summary.tasks }}</strong>
+    <span>tasks</span>
+  </div>
+  <div class="stat">
+    <strong>{{ summary.assigned }}</strong>
+    <span>assignments</span>
+  </div>
+</div>
+
+<div class="stack" style="margin-bottom: 0.5rem; display: grid; gap: 0.55rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); align-items: end;">
+  <a href="/admin/download/per-person" style="display: flex;"><button type="button" style="width: 100%;">Download Per Person</button></a>
+  <a href="/admin/download/schedule" style="display: flex;"><button type="button" style="width: 100%;">Download Schedule</button></a>
+  <a href="/admin/download/points" style="display: flex;"><button type="button" style="width: 100%;">Download Points</button></a>
+</div>
+<div class="stack" style="margin-bottom: 1rem; display: grid; gap: 0.55rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); align-items: end;">
+  <form method="POST" style="display:contents;">
+    <input type="hidden" name="action" value="recalculate">
+    <button type="button" id="recalculate-btn" style="width: 100%; background:#c62828; color:#fff; border-color:#c62828;">Calculate Schedule</button>
+  </form>
+  <button type="button" id="truncate-btn" style="width: 100%; background:#333; color:#fff; border-color:#333;">Truncate Database</button>
+</div>
+
+<!-- Recalculate progress overlay -->
+<div id="recalc-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:1300; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:16px; padding:2rem; width:min(420px,92vw); box-shadow:0 8px 32px rgba(0,0,0,0.25); text-align:center;">
+    <div style="font-weight:700; font-size:1.1rem; margin-bottom:1rem;">Calculating Schedule…</div>
+    <div style="font-size:2rem; font-weight:800; color:var(--accent); margin-bottom:0.5rem;" id="recalc-count">0 / 0</div>
+    <div style="background:var(--line); border-radius:999px; height:8px; overflow:hidden; margin-bottom:1rem;">
+      <div id="recalc-bar" style="height:100%; width:0%; background:var(--accent); transition:width 0.2s;"></div>
+    </div>
+    <div class="quiet" id="recalc-msg" style="font-size:0.82rem; min-height:1.2em;"></div>
+  </div>
+</div>
+
+{% if replacement_modal %}
+<div id="replacement-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:1200; display:flex; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:14px; width:min(760px, 92vw); max-height:86vh; overflow:auto; box-shadow:0 10px 36px rgba(0,0,0,0.28); position:relative; padding:1.25rem 1.15rem;">
+    <button id="replacement-modal-close" type="button" aria-label="Close" style="position:absolute; right:0.65rem; top:0.45rem; border:none; background:none; color:#666; cursor:pointer; font-size:1.45rem;">&times;</button>
+    <h3 style="margin:0 0 0.45rem 0;">Replacements Assigned</h3>
+    <p class="quiet" style="margin:0 0 0.85rem 0;">
+      {{ replacement_modal.participant }} became unavailable for {{ replacement_modal.scope }}.
+      These replacements were assigned:
+    </p>
+    <table style="margin:0;">
+      <thead>
+        <tr>
+          <th>Task</th>
+          <th>Replacement(s)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in replacement_modal.tasks %}
+        <tr>
+          <td>{{ row.task }}</td>
+          <td>{{ row.replacements|join(', ') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="grid" style="margin-bottom: 1rem;">
+  <div class="card" style="min-height: 0;">
+    <h3>Set Unavailability</h3>
+    <form method="post" class="stack" style="margin-top: 0.8rem;">
+      <input type="hidden" name="action" value="set-unavailable">
+      <div>
+        <label for="person">Participant Name</label>
+        <input id="person" name="person" placeholder="partial name allowed" required>
+      </div>
+      <div>
+        <label for="reason">Reason (optional)</label>
+        <input id="reason" name="reason">
+      </div>
+      <div class="form-grid">
+        <div>
+          <label for="scope">Scope</label>
+          <select id="scope" name="scope">
+            <option value="task">Specific task id</option>
+            <option value="day">Whole day</option>
+            <option value="all-days">All days</option>
+          </select>
+        </div>
+        <div>
+          <label for="scope_value_task">Task / Day</label>
+          <select id="scope_value_task" name="scope_value" data-scope-input="task">
+            {% if task_options %}
+            {% for task in task_options %}
+            <option value="{{ task.id }}" data-lead="{{ task.lead }}" data-helpers="{{ task.helpers }}">[#{{ task.id }}] {{ task.day_name }} {{ task.time }} - {{ task.name }}</option>
+            {% endfor %}
+            {% else %}
+            <option value="">No upcoming tasks</option>
+            {% endif %}
+          </select>
+          <select id="scope_value_day" name="scope_value" data-scope-input="day" style="display: none;">
+            {% if day_options %}
+            {% for day in day_options %}
+            <option value="{{ day }}">{{ day_names.get(day, "Day " ~ day) }}</option>
+            {% endfor %}
+            {% else %}
+            <option value="">No upcoming days</option>
+            {% endif %}
+          </select>
+          <input id="scope_value_all_days" name="scope_value" data-scope-input="all-days" type="hidden" value="">
+        </div>
+      </div>
+      <div><button type="submit">Apply Unavailability</button></div>
+    </form>
+  </div>
+
+  <div class="card" style="min-height: 0;">
+    <h3>Assignment Actions</h3>
+    <div class="stack" style="margin-top: 0.8rem; gap: 1.5rem;">
+      <!-- Set Lead Form -->
+      <form method="post" class="form-grid">
+        <input type="hidden" name="action" value="set-lead">
+        <div>
+          <label for="lead_task_id">Task</label>
+          <select id="lead_task_id" name="task_id" required>
+            <option value="">-- select a task --</option>
+            {% if task_options %}
+            {% for task in task_options %}
+            <option value="{{ task.id }}">[#{{ task.id }}] {{ task.day_name }} {{ task.time }} - {{ task.name }}</option>
+            {% endfor %}
+            {% else %}
+            <option value="">No upcoming tasks</option>
+            {% endif %}
+          </select>
+        </div>
+        <div>
+          <label for="lead_person">Lead Participant</label>
+          <input id="lead_person" name="person" placeholder="Type name..." required>
+          <div id="lead-candidate-suggestions" class="quiet" style="font-size:0.8rem; margin-top:0.3rem;"></div>
+        </div>
+        <div style="align-self: end;"><button type="submit" style="background:var(--accent); color:#fff; border-color:var(--accent);">Assign as Lead</button></div>
+      </form>
+
+      <!-- Remove Assignment Form -->
+      <form method="post" class="form-grid">
+        <input type="hidden" name="action" value="remove-assignment">
+        <div>
+          <label for="remove_task_id">Task</label>
+          <select id="remove_task_id" name="task_id" required>
+            <option value="">-- select a task --</option>
+            {% if task_options %}
+            {% for task in task_options %}
+            <option value="{{ task.id }}">[#{{ task.id }}] {{ task.day_name }} {{ task.time }} - {{ task.name }}</option>
+            {% endfor %}
+            {% else %}
+            <option value="">No upcoming tasks</option>
+            {% endif %}
+          </select>
+        </div>
+        <div>
+          <label for="remove_person">Participant to Remove</label>
+          <input id="remove_person" name="person" placeholder="Type name..." required>
+        </div>
+        <div style="align-self: end;"><button type="submit" style="background:#c62828; color:#fff; border-color:#c62828;">Remove Assignment</button></div>
+      </form>
+
+      <!-- Add Helper Form -->
+      <form method="post" class="form-grid">
+        <input type="hidden" name="action" value="add-helper">
+        <div>
+          <label for="helper_task_id">Task</label>
+          <select id="helper_task_id" name="task_id" required>
+            <option value="">-- select a task --</option>
+            {% if task_options %}
+            {% for task in task_options %}
+            <option value="{{ task.id }}">[#{{ task.id }}] {{ task.day_name }} {{ task.time }} - {{ task.name }}</option>
+            {% endfor %}
+            {% else %}
+            <option value="">No upcoming tasks</option>
+            {% endif %}
+          </select>
+        </div>
+        <div>
+          <label for="helper_person">Helper Participant</label>
+          <input id="helper_person" name="person" placeholder="Type name..." required>
+          <div id="helper-candidate-suggestions" class="quiet" style="font-size:0.8rem; margin-top:0.3rem;"></div>
+        </div>
+        <div style="align-self: end;"><button type="submit" style="background:var(--secondary); color:#fff; border-color:var(--secondary);">Add as Helper</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Filter tasks for Set Unavailability based on person and scope
+  const personInput = document.getElementById('person');
+  const scopeSelect = document.getElementById('scope');
+  const taskSelect = document.getElementById('scope_value_task');
+  
+  // Store all original task options
+  const allTaskOptions = Array.from(taskSelect.options).map(opt => ({
+    value: opt.value,
+    text: opt.text,
+    lead: opt.getAttribute('data-lead') || '-',
+    helpers: opt.getAttribute('data-helpers') || '-'
+  }));
+  
+  function getAssignedNames(lead, helpers) {
+    const names = [];
+    if (lead && lead !== '-') names.push(lead);
+    if (helpers && helpers !== '-') {
+      helpers.split(', ').forEach(h => {
+        if (h.trim()) names.push(h.trim());
+      });
+    }
+    return names;
+  }
+  
+  function updateTaskOptions() {
+    if (scopeSelect.value !== 'task') return;
+    
+    const personValue = personInput.value.toLowerCase().trim();
+    
+    // Clear and repopulate task options
+    taskSelect.innerHTML = '';
+    
+    allTaskOptions.forEach(opt => {
+      if (!opt.value) {
+        // Keep the placeholder option
+        const option = document.createElement('option');
+        option.value = '';
+        option.text = opt.text;
+        taskSelect.appendChild(option);
+        return;
+      }
+      
+      // Check if person is assigned to this task
+      const assignedNames = getAssignedNames(opt.lead, opt.helpers);
+      const personIsAssigned = personValue && assignedNames.some(name => 
+        name.toLowerCase().includes(personValue) || personValue.includes(name.toLowerCase())
+      );
+      
+      // Only show tasks where person is assigned (if person is selected)
+      if (!personValue || personIsAssigned) {
+        const option = document.createElement('option');
+        option.value = opt.value;
+        option.text = opt.text;
+        option.setAttribute('data-lead', opt.lead);
+        option.setAttribute('data-helpers', opt.helpers);
+        taskSelect.appendChild(option);
+      }
+    });
+  }
+  
+  if (personInput && scopeSelect && taskSelect) {
+    personInput.addEventListener('input', updateTaskOptions);
+    scopeSelect.addEventListener('change', updateTaskOptions);
+  }
+  
+  // Set Lead action
+  const leadTaskSelect = document.getElementById('lead_task_id');
+  const leadPersonInput = document.getElementById('lead_person');
+  const leadSuggestionsDiv = document.getElementById('lead-candidate-suggestions');
+
+  function updateLeadCandidates() {
+    const taskId = leadTaskSelect.value;
+    if (!taskId) {
+      leadSuggestionsDiv.innerHTML = '';
+      return;
+    }
+
+    leadSuggestionsDiv.innerHTML = '<em style="color:#999;">Loading...</em>';
+    
+    fetch(`/admin/candidates/${taskId}`)
+      .then(r => r.json())
+      .then(data => {
+        const candidates = data.candidates || [];
+        if (candidates.length > 0) {
+          leadSuggestionsDiv.innerHTML = 'Available: ' + candidates.map(c => 
+            `<a href="#" class="candidate-link" data-name="${c.name}" style="text-decoration:none; color:var(--accent); margin-right:0.6rem; border-bottom:1px dashed var(--accent);">${c.name}</a>`
+          ).join('');
+          
+          leadSuggestionsDiv.querySelectorAll('.candidate-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+              e.preventDefault();
+              leadPersonInput.value = link.getAttribute('data-name');
+              leadPersonInput.style.backgroundColor = '#fff9c4';
+              setTimeout(() => { leadPersonInput.style.backgroundColor = ''; }, 600);
+            });
+          });
+        } else {
+          leadSuggestionsDiv.innerHTML = '<em style="color:#999;">No available candidates</em>';
+        }
+      })
+      .catch(err => {
+        leadSuggestionsDiv.innerHTML = '<span style="color:#d32f2f;">Error loading candidates</span>';
+        console.error(err);
+      });
+  }
+
+  if (leadTaskSelect && leadPersonInput) {
+    leadTaskSelect.addEventListener('change', updateLeadCandidates);
+  }
+
+  // Add Helper action
+  const helperTaskSelect = document.getElementById('helper_task_id');
+  const helperPersonInput = document.getElementById('helper_person');
+  const helperSuggestionsDiv = document.getElementById('helper-candidate-suggestions');
+
+  function updateHelperCandidates() {
+    const taskId = helperTaskSelect.value;
+    if (!taskId) {
+      helperSuggestionsDiv.innerHTML = '';
+      return;
+    }
+
+    helperSuggestionsDiv.innerHTML = '<em style="color:#999;">Loading...</em>';
+    
+    fetch(`/admin/candidates/${taskId}`)
+      .then(r => r.json())
+      .then(data => {
+        const candidates = data.candidates || [];
+        if (candidates.length > 0) {
+          helperSuggestionsDiv.innerHTML = 'Available: ' + candidates.map(c => 
+            `<a href="#" class="candidate-link" data-name="${c.name}" style="text-decoration:none; color:var(--secondary); margin-right:0.6rem; border-bottom:1px dashed var(--secondary);">${c.name}</a>`
+          ).join('');
+          
+          helperSuggestionsDiv.querySelectorAll('.candidate-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+              e.preventDefault();
+              helperPersonInput.value = link.getAttribute('data-name');
+              helperPersonInput.style.backgroundColor = '#f1f8e9';
+              setTimeout(() => { helperPersonInput.style.backgroundColor = ''; }, 600);
+            });
+          });
+        } else {
+          helperSuggestionsDiv.innerHTML = '<em style="color:#999;">No available candidates</em>';
+        }
+      })
+      .catch(err => {
+        helperSuggestionsDiv.innerHTML = '<span style="color:#d32f2f;">Error loading candidates</span>';
+        console.error(err);
+      });
+  }
+
+  if (helperTaskSelect && helperPersonInput) {
+    helperTaskSelect.addEventListener('change', updateHelperCandidates);
+  }
+
+  // Handle Excluded column clicks
+  document.querySelectorAll('.excluded-cell').forEach(cell => {
+    cell.addEventListener('click', function(e) {
+      e.preventDefault();
+      const personName = this.getAttribute('data-name');
+      const isExcluded = this.getAttribute('data-excluded') === 'True';
+      
+      // Only allow marking as unavailable if not already excluded
+      if (isExcluded) {
+        alert(`${personName} is already excluded. Consider reviewing their record.`);
+        return;
+      }
+      
+      // Fill the Set Unavailability form
+      const personInput = document.getElementById('person');
+      const scopeSelect = document.getElementById('scope');
+      const reasonInput = document.getElementById('reason');
+      const submitBtn = document.querySelector('[name="action"][value="set-unavailable"]').closest('form').querySelector('button[type="submit"]');
+      
+      personInput.value = personName;
+      scopeSelect.value = 'all-days';
+      reasonInput.value = 'Excluded participant';
+      
+      // Scroll to form
+      personInput.closest('.card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      
+      // Highlight the form
+      personInput.style.backgroundColor = '#fff9c4';
+      setTimeout(() => { personInput.style.backgroundColor = ''; }, 600);
+      
+      // Auto-submit after a short delay
+      setTimeout(() => {
+        submitBtn.click();
+      }, 300);
+    });
+  });
+});
+</script>
+
+<h3>Unavailability</h3>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Participant</th>
+      <th>Scope</th>
+      <th>Task</th>
+      <th>Reason</th>
+      <th>Replacements</th>
+      <th>Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in unavailabilities %}
+    <tr>
+      <td>{{ row.id }}</td>
+      <td>{{ row.participant }}</td>
+      <td>{{ row.scope }}</td>
+      <td>{{ row.task }}</td>
+      <td>{{ row.reason }}</td>
+      <td>{{ row.replacements }}</td>
+      <td>
+        <form method="post" style="margin: 0;">
+          <input type="hidden" name="action" value="remove-unavailable">
+          <input type="hidden" name="record_id" value="{{ row.id }}">
+          <button type="submit">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="empty">No unavailability records.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div style="display: flex; align-items: center; justify-content: space-between; margin-top: 1rem; margin-bottom: 0.75rem;">
+  <h3 style="margin: 0;">Participants</h3>
+  <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+    <input type="checkbox" id="hide-no-availability-checkbox" style="cursor: pointer;">
+    <span style="font-size: 0.9rem;">Hide people without availability</span>
+  </label>
+</div>
+<table id="participants-table">
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Name</th>
+      <th>Email</th>
+      <th>Phone</th>
+      <th>Groups</th>
+      <th>Points</th>
+      <th>Lead?</th>
+      <th colspan="24" style="text-align:center; font-size:0.9rem;">Availability (W/6 | R/6 | F/6 | S/6)</th>
+      <th>Availability Notes</th>
+      <th>Excluded</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in people %}
+    <tr>
+      <td>{{ row.id }}</td>
+      <td><a href="/schedule?name={{ row.name | urlencode }}" style="color: var(--accent); text-decoration: none; font-weight: 500;">{{ row.name }}</a></td>
+      <td>{{ row.email }}</td>
+      <td style="white-space:nowrap;">{{ messaging_icon(row.messaging) }} {{ row.phone }}</td>
+      <td style="font-weight:600; color:var(--accent);">
+        {% set groups_list = (row.group or '').split(',') %}
+        {% for g in groups_list %}
+          {% if g.strip() %}<span style="display:inline-block; background:#e3f2fd; padding:0.2rem 0.5rem; border-radius:4px; font-size:0.8rem; margin:0.1rem;">{{ g.strip() }}</span> {% endif %}
+        {% endfor %}
+      </td>
+      <td>{{ row.points }}</td>
+      <td>{{ "★" if row.is_leader else "-" }}</td>
+      {% for day in [1, 2, 3, 4] %}
+        {% for block in ["07:00-07:30", "07:30-09:00", "09:00-13:00", "13:00-15:30", "15:30-18:00", "18:00-21:00"] %}
+          <td style="width:1rem; height:1rem; padding:2px; text-align:center; font-weight:700; font-size:0.6rem; background:{% if row.assignments[day][block] %}#FFC107{% elif row.availability[day][block] %}#4CAF50{% else %}#f5f5f5{% endif %}; color:{% if row.availability[day][block] %}white{% else %}#999{% endif %}; border:1px solid #ddd; cursor:help;" title="{{ day_names[day] }} {{ block }}{% if row.assignments[day][block] %} (assigned){% endif %}">{% if row.assignments[day][block] %}◉{% elif row.availability[day][block] %}✓{% else %}-{% endif %}</td>
+        {% endfor %}
+      {% endfor %}
+      <td title="{{ row.avail_notes }}">{{ row.avail_notes[:40] }}{% if row.avail_notes|length > 40 %}...{% endif %}</td>
+      <td style="cursor: pointer; text-decoration: underline; color: var(--accent);" class="excluded-cell" data-name="{{ row.name }}" data-excluded="{{ row.excluded }}">{{ "YES" if row.excluded else "no" }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="20" class="empty">No participants found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h3 style="margin-top: 1rem;">Tasks</h3>
+<div class="form-grid" style="margin-bottom: 0.8rem; align-items: end;">
+  <div>
+    <label for="day">Dag</label>
+    <select id="tasks-day-filter">
+      <option value="">Alle dagen</option>
+      {% for day in day_options %}
+      <option value="{{ day }}">{{ day_names.get(day, "Day " ~ day) }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="tasks-task-filter">Taak</label>
+    <input id="tasks-task-filter" type="search" placeholder="Filter op taaknaam…" style="width:100%;">
+  </div>
+  <div>
+    <label for="tasks-person-filter">Persoon (leider / helper)</label>
+    <input id="tasks-person-filter" type="search" placeholder="Filter op naam…" style="width:100%;">
+  </div>
+</div>
+
+<table id="tasks-table">
+  <thead>
+    <tr>
+      <th>TID</th>
+      <th>Dag</th>
+      <th>Tijd</th>
+      <th>Taak</th>
+      <th>Pts</th>
+      <th>Req</th>
+      <th>Loc</th>
+      <th>Informatie</th>
+      <th>Leider</th>
+      <th>Helpers</th>
+      {% if sms_enabled %}<th>SMS</th>{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in tasks %}
+    <tr data-day="{{ row.day }}" data-task="{{ row.name | lower }}" data-person="{{ (row.lead ~ ' ' ~ row.helpers) | lower }}">
+      <td>{{ row.id }}</td>
+      <td>{{ row.day_name }}</td>
+      <td>{{ row.time }}</td>
+      <td>{{ row.name }}</td>
+      <td>{{ row.points }}</td>
+      <td>{{ row.required }}</td>
+      <td>
+        {% if row.location %}
+          {% if row.location.startswith('http') %}
+            <a href="{{ row.location }}" target="_blank" rel="noopener">Link</a>
+          {% else %}
+            {{ row.location }}
+          {% endif %}
+        {% else %}-{% endif %}
+      </td>
+      <td><span class="quiet" style="font-size:0.8rem;">{{ row.description or '-' }}</span></td>
+      <td>{{ row.lead }}</td>
+      <td>
+        {% set helper_count = (row.helpers.split(', ') | length) if (row.helpers != '-') else 0 %}
+        {% set assigned_count = (1 if row.lead != '-' else 0) + helper_count %}
+        {% if assigned_count < row.required %}
+          <span style="display: flex; align-items: center; gap: 0.5rem;">
+            <span>{{ row.helpers }}</span>
+            <span style="color: #d32f2f; font-weight: 700; font-size: 0.9rem;">iemand?</span>
+          </span>
+        {% else %}
+          {{ row.helpers }}
+        {% endif %}
+      </td>
+      {% if sms_enabled %}
+      <td><button type="button" class="sms-task-btn" data-task-id="{{ row.id }}" data-task-name="{{ row.name }}" disabled style="font-size:0.78rem; padding:0.25rem 0.5rem;">Send SMS</button></td>
+      {% endif %}
+    </tr>
+    {% else %}
+    <tr id="tasks-empty-row"><td colspan="{% if sms_enabled %}11{% else %}10{% endif %}" class="empty">No tasks found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if sms_enabled %}
+<div class="card" style="margin-top:1rem; border:2px solid #f57c00; background:#fff8f0;">
+  <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+    <div>
+      <strong style="color:#e65100;">SMS Reminders</strong>
+      <span class="quiet" style="margin-left:0.5rem; font-size:0.82rem;">Sends a Dutch SMS via Twilio to each assigned participant</span>
+    </div>
+    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; margin-left:auto;">
+      <span style="font-size:0.85rem; font-weight:600;">Enable sending</span>
+      <label class="toggle-switch">
+        <input type="checkbox" id="sms-enable-toggle">
+        <span class="toggle-track"></span>
+      </label>
+    </label>
+    <button type="button" id="sms-all-btn" disabled style="background:#e65100; color:#fff; border-color:#e65100;">Send to all tasks</button>
+  </div>
+</div>
+
+<!-- SMS result overlay -->
+<div id="sms-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:1400; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:16px; padding:1.5rem; width:min(560px,92vw); max-height:80vh; overflow:auto; box-shadow:0 8px 32px rgba(0,0,0,0.25); position:relative;">
+    <button id="sms-overlay-close" style="position:absolute; top:0.75rem; right:0.75rem; background:none; border:none; font-size:1.4rem; cursor:pointer; color:#555;">&times;</button>
+    <div style="font-weight:700; font-size:1.05rem; margin-bottom:0.75rem;">SMS Results</div>
+    <table style="width:100%; font-size:0.85rem;">
+      <thead><tr><th>Name</th><th>Phone</th><th>Status</th></tr></thead>
+      <tbody id="sms-results-body"></tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const scopeSelect = document.getElementById("scope");
+  const scopeTask = document.getElementById("scope_value_task");
+  const scopeDay = document.getElementById("scope_value_day");
+  const scopeAllDays = document.getElementById("scope_value_all_days");
+
+  if (scopeSelect) {
+    function updateScopeInput() {
+      const mode = scopeSelect.value;
+      if (scopeTask) scopeTask.style.display = mode === "task" ? "block" : "none";
+      if (scopeDay) scopeDay.style.display = mode === "day" ? "block" : "none";
+      if (scopeTask) scopeTask.disabled = mode !== "task";
+      if (scopeDay) scopeDay.disabled = mode !== "day";
+      if (scopeAllDays) scopeAllDays.disabled = mode !== "all-days";
+    }
+
+    scopeSelect.addEventListener("change", updateScopeInput);
+    updateScopeInput();
+  }
+
+  const replacementModal = document.getElementById("replacement-modal");
+  const replacementModalClose = document.getElementById("replacement-modal-close");
+  if (replacementModal && replacementModalClose) {
+    function closeReplacementModal() {
+      replacementModal.style.display = "none";
+    }
+    replacementModalClose.addEventListener("click", closeReplacementModal);
+    replacementModal.addEventListener("click", function (e) {
+      if (e.target === replacementModal) {
+        closeReplacementModal();
+      }
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && replacementModal.style.display !== "none") {
+        closeReplacementModal();
+      }
+    });
+  }
+
+  // Tasks table live filter
+  const daySel    = document.getElementById("tasks-day-filter");
+  const taskInput = document.getElementById("tasks-task-filter");
+  const personInput = document.getElementById("tasks-person-filter");
+  const tbody     = document.querySelector("#tasks-table tbody");
+
+  if (tbody) {
+    function applyFilter() {
+      const day    = daySel ? daySel.value : "";
+      const task   = taskInput.value.trim().toLowerCase();
+      const person = personInput.value.trim().toLowerCase();
+      let visible  = 0;
+      tbody.querySelectorAll("tr[data-day]").forEach(function (tr) {
+        const matchDay    = !day    || tr.dataset.day    === day;
+        const matchTask   = !task   || tr.dataset.task.includes(task);
+        const matchPerson = !person || tr.dataset.person.includes(person);
+        const show = matchDay && matchTask && matchPerson;
+        tr.style.display = show ? "" : "none";
+        if (show) visible++;
+      });
+      const emptyRow = document.getElementById("tasks-empty-row");
+      if (emptyRow) emptyRow.style.display = visible === 0 ? "" : "none";
+    }
+
+    if (daySel)     daySel.addEventListener("change", applyFilter);
+    if (taskInput)  taskInput.addEventListener("input", applyFilter);
+    if (personInput) personInput.addEventListener("input", applyFilter);
+  }
+
+  // Recalculate with live progress
+  const recalcBtn = document.getElementById("recalculate-btn");
+  const recalcOverlay = document.getElementById("recalc-overlay");
+  const recalcCount = document.getElementById("recalc-count");
+  const recalcBar = document.getElementById("recalc-bar");
+  const recalcMsg = document.getElementById("recalc-msg");
+
+  if (recalcBtn && recalcOverlay) {
+    recalcBtn.addEventListener("click", function () {
+      recalcOverlay.style.display = "flex";
+      recalcBtn.disabled = true;
+      recalcCount.textContent = "0 / ?";
+      recalcBar.style.width = "0%";
+      recalcMsg.textContent = "";
+
+      const es = new EventSource("/admin/recalculate/stream");
+      es.onmessage = function (e) {
+        const d = JSON.parse(e.data);
+        recalcMsg.textContent = d.msg;
+        if (d.total > 0) {
+          recalcCount.textContent = d.assigned + " / " + d.total;
+          recalcBar.style.width = Math.round((d.assigned / d.total) * 100) + "%";
+        }
+        if (d.assigned >= d.total && d.total > 0) {
+          es.close();
+          setTimeout(function () {
+            recalcOverlay.style.display = "none";
+            recalcBtn.disabled = false;
+            window.location.reload();
+          }, 900);
+        }
+      };
+      es.onerror = function () {
+        es.close();
+        recalcOverlay.style.display = "none";
+        recalcBtn.disabled = false;
+        recalcMsg.textContent = "Error — see server logs.";
+      };
+    });
+  }
+
+  // Truncate
+  const truncateBtn = document.getElementById("truncate-btn");
+  if (truncateBtn) {
+    truncateBtn.addEventListener("click", function () {
+      if (confirm("🚨 BE CAREFUL!\n\nThis will PERMANENTLY DELETE all participants, tasks, and assignments.\n\nAre you sure you want to proceed?")) {
+        const form = document.createElement("form");
+        form.method = "POST";
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "action";
+        input.value = "truncate";
+        form.appendChild(input);
+        document.body.appendChild(form);
+        form.submit();
+      }
+    });
+  }
+
+  // SMS
+  const smsToggle = document.getElementById("sms-enable-toggle");
+  const smsAllBtn = document.getElementById("sms-all-btn");
+  const smsOverlay = document.getElementById("sms-overlay");
+  const smsClose = document.getElementById("sms-overlay-close");
+  const smsBody = document.getElementById("sms-results-body");
+  const smsTaskBtns = document.querySelectorAll(".sms-task-btn");
+
+  if (smsToggle) {
+    smsToggle.addEventListener("change", function () {
+      const on = smsToggle.checked;
+      if (smsAllBtn) smsAllBtn.disabled = !on;
+      smsTaskBtns.forEach(function (b) { b.disabled = !on; });
+    });
+
+    function showSmsResults(results) {
+      if (smsBody) {
+        smsBody.innerHTML = "";
+        results.forEach(function (r) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${r.name}</td><td>${r.phone}</td><td style="color:${r.ok ? 'green' : '#c62828'}">${r.ok ? '✓ Sent' : '✗ ' + (r.error || 'Failed')}</td>`;
+          smsBody.appendChild(tr);
+        });
+      }
+      if (smsOverlay) smsOverlay.style.display = "flex";
+    }
+
+    function sendSms(url, btn) {
+      btn.disabled = true;
+      btn.textContent = "Sending…";
+      fetch(url, { method: "POST" })
+        .then(function (r) { return r.json(); })
+        .then(function (data) { showSmsResults(data); })
+        .catch(function (e) { showSmsResults([{ name: "-", phone: "-", ok: false, error: String(e) }]); })
+        .finally(function () {
+          btn.textContent = btn.dataset.taskId ? "Send SMS" : "Send to all tasks";
+          btn.disabled = !smsToggle.checked;
+        });
+    }
+
+    smsTaskBtns.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        if (!confirm("Send SMS reminder to all participants of task '" + btn.dataset.taskName + "'?")) return;
+        sendSms("/admin/sms/task/" + btn.dataset.taskId, btn);
+      });
+    });
+
+    if (smsAllBtn) {
+      smsAllBtn.addEventListener("click", function () {
+        if (!confirm("Send SMS reminders to ALL participants for ALL tasks? This will cost real money.")) return;
+        sendSms("/admin/sms/all", smsAllBtn);
+      });
+    }
+
+    if (smsClose) {
+      smsClose.addEventListener("click", function () { smsOverlay.style.display = "none"; });
+    }
+    if (smsOverlay) {
+      smsOverlay.addEventListener("click", function (e) { if (e.target === smsOverlay) smsOverlay.style.display = "none"; });
+    }
+  }
+
+  // Availability filter for participants table
+  const hideNoAvailCheckbox = document.getElementById("hide-no-availability-checkbox");
+  const participantsTable = document.getElementById("participants-table");
+  
+  if (hideNoAvailCheckbox && participantsTable) {
+    hideNoAvailCheckbox.addEventListener("change", function () {
+      const shouldHide = this.checked;
+      const tbody = participantsTable.querySelector("tbody");
+      
+      if (!tbody) return;
+      
+      const rows = tbody.querySelectorAll("tr:not(.empty)");
+      rows.forEach(row => {
+        if (shouldHide) {
+          // Check if row has any green cells (available) or yellow cells (assigned)
+          const availableCells = row.querySelectorAll("td[style*='#4CAF50'], td[style*='#FFC107']");
+          const hasAvailability = availableCells.length > 0;
+          row.style.display = hasAvailability ? "" : "none";
+        } else {
+          row.style.display = "";
+        }
+      });
+    });
+  }
+});
+</script>
+</script>
+{% endblock %}

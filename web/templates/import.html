@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Import CSV - Zomerkamp 2026{% endblock %}
+{% block content %}
+<h2>Import Data</h2>
+<p class="intro">Upload tasks and participants CSV files directly in the web app.</p>
+
+<div class="grid">
+  <div class="card">
+    <h3>Participants</h3>
+    <form method="post" enctype="multipart/form-data" class="stack" style="margin-top: 0.8rem;">
+      <input type="hidden" name="action" value="upload-participants">
+      <div>
+        <label for="participants_csv">Participants Excel (.xlsx) or CSV (survey export or legacy format)</label>
+        <input id="participants_csv" name="participants_csv" type="file" accept=".xlsx,.csv" required>
+      </div>
+      <div><button type="submit">Upload Participants</button></div>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Tasks</h3>
+    <form method="post" enctype="multipart/form-data" class="stack" style="margin-top: 0.8rem;">
+      <input type="hidden" name="action" value="upload-tasks">
+      <div>
+        <label for="tasks_file">Tasks Excel (.xlsx) or CSV</label>
+        <input id="tasks_file" name="tasks_file" type="file" accept=".xlsx,.csv" required>
+      </div>
+      <div><button type="submit">Upload Tasks</button></div>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Task Leaders</h3>
+    <form method="post" enctype="multipart/form-data" class="stack" style="margin-top: 0.8rem;">
+      <input type="hidden" name="action" value="upload-leaders">
+      <div>
+        <label for="leaders_txt">Leaders Text File (format: TASK_NAME: name1, name2, ...)</label>
+        <input id="leaders_txt" name="leaders_txt" type="file" accept=".txt" required>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--muted); margin: 0.5rem 0;">
+        Supports fuzzy name matching for partial/missing last names. Lines with # are treated as comments.
+      </p>
+      <div><button type="submit">Upload Leaders</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

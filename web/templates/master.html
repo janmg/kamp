@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% from "_messaging_icons.html" import messaging_icon %}
+{% block title %}Master Sheet - Zomerkamp 2026{% endblock %}
+{% block content %}
+{% set day_names = {1: "Woensdag", 2: "Donderdag", 3: "Vrijdag", 4: "Zaterdag"} %}
+
+{# Macro: returns the correct deep-link URL for a given messaging app, phone and message #}
+{% macro msg_url(app, phone, text) %}
+{%- set digits = phone | replace('+', '') | replace(' ', '') | replace('-', '') -%}
+{%- set plus_phone = '+' ~ digits -%}
+{%- if app == 'telegram' -%}
+https://t.me/+{{ digits }}
+{%- elif app == 'signal' -%}
+https://signal.me/#p/{{ plus_phone }}
+{%- elif app == 'sms' -%}
+sms:{{ plus_phone }}?body={{ text | urlencode }}
+{%- else -%}
+https://wa.me/{{ digits }}?text={{ text | urlencode }}
+{%- endif -%}
+{% endmacro %}
+
+<style>
+  .master-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.25rem; }
+  .master-tools { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+  .task-filter-wrap { display: flex; align-items: center; gap: 0.5rem; }
+  .task-filter-wrap label { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--muted); }
+  .task-filter-input { width: min(340px, 82vw); border: 1px solid var(--line); border-radius: 8px; padding: 0.45rem 0.6rem; background: #fff; }
+  .toggle-wrap { display: flex; align-items: center; gap: 0.55rem; }
+  .toggle-wrap label { font-size: 0.85rem; font-weight: 600; color: var(--muted); cursor: pointer; user-select: none; }
+  .toggle-switch { position: relative; display: inline-block; width: 2.6rem; height: 1.4rem; }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .toggle-track { position: absolute; inset: 0; background: var(--line); border-radius: 999px; cursor: pointer; transition: background 0.2s; }
+  .toggle-track::before { content: ""; position: absolute; left: 3px; top: 3px; width: 1.05rem; height: 1.05rem; background: #fff; border-radius: 50%; transition: transform 0.2s; box-shadow: 0 1px 4px rgba(0,0,0,0.18); }
+  .toggle-switch input:checked + .toggle-track { background: var(--accent); }
+  .toggle-switch input:checked + .toggle-track::before { transform: translateX(1.2rem); }
+</style>
+
+<div class="master-header">
+  <div>
+    <h2 style="margin-bottom:0;">Master Sheet</h2>
+    <p class="intro" style="margin-top:0.2rem;">Alle taken over alle dagen, with leiders and helpervoor elke taak.</p>
+  </div>
+</div>
+
+<div class="master-tools">
+  <div class="task-filter-wrap">
+    <label for="task-filter">Filter tasks</label>
+    <input id="task-filter" class="task-filter-input" type="search" placeholder="Type task name..." autocomplete="off">
+  </div>
+  <div class="toggle-wrap">
+    <label for="upcoming-toggle">Upcoming only</label>
+    <label class="toggle-switch">
+      <input type="checkbox" id="upcoming-toggle" checked>
+      <span class="toggle-track"></span>
+    </label>
+    <span class="quiet" id="upcoming-status" style="font-size:0.8rem;"></span>
+  </div>
+</div>
+
+{% for day, tasks in by_day.items() %}
+<div class="day-block" data-day-block>
+  <div class="day-header">
+    <strong>{{ day_names[day] | default("Day " ~ day) }}</strong>
+    <span class="quiet">{{ tasks|length }} task(s)</span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Task</th>
+        <th>Lead</th>
+        <th>Helpers</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for task in tasks %}
+      <tr data-end-iso="{{ task.end_iso }}" data-task-name="{{ task.name|lower }}">
+        <td>{{ task.begin }}-{{ task.end }}</td>
+        <td>
+          <strong>{{ task.name }}</strong>
+          {% if task.location %}
+          <div class="quiet" style="font-size:0.85rem; margin-top:0.15rem;">
+            <em>Loc: 
+              {% if task.location.startswith('http') %}
+                <a href="{{ task.location }}" target="_blank" rel="noopener">{{ task.location }}</a>
+              {% else %}
+                {{ task.location }}
+              {% endif %}
+            </em>
+          </div>
+          {% endif %}
+          {% if task.description %}
+          <div class="quiet" style="font-size:0.85rem; margin-top:0.1rem; color:#666;">
+            {{ task.description }}
+          </div>
+          {% endif %}
+        </td>
+        <td>
+          {% if task.lead %}
+            <div><a class="is-name" href="/schedule?name={{ task.lead.participant.name|urlencode }}">{{ task.lead.participant.name }}</a></div>
+            {% if task.lead.participant.phone %}
+            {% set _app = task.lead.participant.messaging or 'whatsapp' %}
+            {% set _msg = 'Hoi ' ~ task.lead.participant.name ~ ', je bent de leider voor ' ~ task.name ~ ' op ' ~ day_names[day] ~ ' ' ~ task.begin ~ '-' ~ task.end ~ '.' %}
+            <div class="quiet">{{ messaging_icon(_app) }} <a href="{{ msg_url(_app, task.lead.participant.phone, _msg) | trim }}" target="_blank" rel="noopener">{{ task.lead.participant.phone }}</a></div>
+            {% endif %}
+          {% else %}
+            <span class="quiet">-</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if task.assignment_count < task.people_required %}
+            <span style="display: flex; align-items: center; gap: 0.5rem;">
+              <span>
+                {% if task.helpers %}
+                  {% for helper in task.helpers %}
+                  {% set _app = helper.participant.messaging or 'whatsapp' %}
+                  {% set _msg = 'Hoi ' ~ helper.participant.name ~ ', je bent helper voor ' ~ task.name ~ ' op ' ~ day_names[day] ~ ' ' ~ task.begin ~ '-' ~ task.end ~ '.' %}
+                  <div><span class="is-name">{{ helper.participant.name }}</span>{% if helper.participant.phone %} <span class="quiet">{{ messaging_icon(_app) }} <a href="{{ msg_url(_app, helper.participant.phone, _msg) | trim }}" target="_blank" rel="noopener">{{ helper.participant.phone }}</a></span>{% endif %}</div>
+                  {% endfor %}
+                {% else %}
+                  <span class="quiet">-</span>
+                {% endif %}
+              </span>
+              <span style="color: #d32f2f; font-weight: 700; font-size: 0.9rem;">iemand?</span>
+            </span>
+          {% else %}
+            {% if task.helpers %}
+              {% for helper in task.helpers %}
+              {% set _app = helper.participant.messaging or 'whatsapp' %}
+              {% set _msg = 'Hoi ' ~ helper.participant.name ~ ', je bent helper voor ' ~ task.name ~ ' op ' ~ day_names[day] ~ ' ' ~ task.begin ~ '-' ~ task.end ~ '.' %}
+              <div><span class="is-name">{{ helper.participant.name }}</span>{% if helper.participant.phone %} <span class="quiet">{{ messaging_icon(_app) }} <a href="{{ msg_url(_app, helper.participant.phone, _msg) | trim }}" target="_blank" rel="noopener">{{ helper.participant.phone }}</a></span>{% endif %}</div>
+              {% endfor %}
+            {% else %}
+              <span class="quiet">-</span>
+            {% endif %}
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty">No tasks found.</div>
+{% endfor %}
+
+<script>
+(function () {
+  const toggle = document.getElementById("upcoming-toggle");
+  const taskFilter = document.getElementById("task-filter");
+  const status = document.getElementById("upcoming-status");
+
+  function applyFilter() {
+    const upcomingOnly = toggle.checked;
+    const query = (taskFilter?.value || "").trim().toLowerCase();
+    const now = new Date();
+
+    // Collect all rows with end timestamps
+    const allRows = Array.from(document.querySelectorAll("tr[data-end-iso]"));
+
+    // Find the most recently ended row (latest end that is still in the past)
+    let latestPastRow = null;
+    let latestPastTime = null;
+    for (const row of allRows) {
+      const endTime = new Date(row.dataset.endIso);
+      if (endTime <= now) {
+        if (latestPastTime === null || endTime > latestPastTime) {
+          latestPastTime = endTime;
+          latestPastRow = row;
+        }
+      }
+    }
+
+    let hiddenCount = 0;
+    let visibleCount = 0;
+    for (const row of allRows) {
+      const endTime = new Date(row.dataset.endIso);
+      const isPast = endTime <= now;
+      const isMostRecent = row === latestPastRow;
+      const taskName = row.dataset.taskName || "";
+      const matchesTask = !query || taskName.includes(query);
+
+      if (!matchesTask || (upcomingOnly && isPast && !isMostRecent)) {
+        row.style.display = "none";
+        if (upcomingOnly && isPast && !isMostRecent) {
+          hiddenCount++;
+        }
+      } else {
+        row.style.display = "";
+        visibleCount++;
+        if (isPast) {
+          row.style.color = "var(--quiet, #888)";
+          row.style.opacity = "0.6";
+        } else {
+          row.style.color = "";
+          row.style.opacity = "";
+        }
+      }
+    }
+
+    // Hide day blocks that have no visible rows
+    for (const block of document.querySelectorAll("[data-day-block]")) {
+      const visibleRows = block.querySelectorAll("tbody tr[data-end-iso]:not([style*='display: none'])");
+      block.style.display = visibleRows.length === 0 ? "none" : "";
+    }
+
+    const statusParts = [];
+    if (query) {
+      statusParts.push(`${visibleCount} match${visibleCount === 1 ? "" : "es"}`);
+    }
+    if (upcomingOnly && hiddenCount > 0) {
+      statusParts.push(`${hiddenCount} past task(s) hidden`);
+    }
+    status.textContent = statusParts.join(" • ");
+  }
+
+  toggle.addEventListener("change", applyFilter);
+  if (taskFilter) {
+    taskFilter.addEventListener("input", applyFilter);
+  }
+  applyFilter();
+  // Add random hearts to volunteer appreciation
+  (function () {
+    const links = document.querySelectorAll("td > div > a[href*='/schedule']");
+    const hearts = ["❤️", "💙", "💚", "💛", "🧡"];
+    
+    // Collect unique volunteer names and their first link element
+    const uniqueVolunteers = {};
+    links.forEach(function (link) {
+      const name = link.textContent.trim();
+      if (!uniqueVolunteers[name]) {
+        uniqueVolunteers[name] = link;
+      }
+    });
+    
+    Object.values(uniqueVolunteers).forEach(link => {
+       if (Math.random() < 0.1) {
+         const heart = hearts[Math.floor(Math.random() * hearts.length)];
+         link.textContent = link.textContent + " " + heart;
+       }
+    });
+  })();})();
+</script>
+{% endblock %}

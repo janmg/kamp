@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Home - NTC Polaris Zomerkamp{% endblock %}
+{% block content %}
+<h2>Roster Overview</h2>
+<p class="intro">Eerlijk zullen we alle taken delen</p>
+
+<div class="stats">
+  <div class="stat">
+    <strong>{{ participant_count }}</strong>
+    <span>participants</span>
+  </div>
+  <div class="stat">
+    <strong>{{ task_count }}</strong>
+    <span>tasks</span>
+  </div>
+  <div class="stat">
+    <strong>{{ assigned_count }}</strong>
+    <span>total assignments</span>
+  </div>
+  <div class="stat">
+    <strong>{% if top_volunteer %}{{ top_volunteer.points }}{% else %}-{% endif %}</strong>
+    <span>{% if top_volunteer %}top score: <span class="is-name">{{ top_volunteer.name }}</span>{% else %}no scores yet{% endif %}</span>
+  </div>
+</div>
+
+<div class="grid">
+  <a href="/import" class="card">
+    <div class="card-kicker">Data Intake</div>
+    <h3>Import CSV</h3>
+    <p>Upload tasks and participants directly from the browser, including database table initialization.</p>
+  </a>
+  <a href="/admin" class="card">
+    <div class="card-kicker">Scheduler</div>
+    <h3>Admin Exports</h3>
+    <p>Download schedule and points exports from the top of the Admin page.</p>
+  </a>
+  <a href="/admin" class="card">
+    <div class="card-kicker">Management</div>
+    <h3>Admin Panel</h3>
+    <p>Handle unavailability, lead changes, and assignment updates in one place.</p>
+  </a>
+  <a href="/leaderboard" class="card">
+    <div class="card-kicker">Fairness</div>
+    <h3>Leaderboard</h3>
+    <p>Rank participants by earned points and quickly spot uneven workload.</p>
+  </a>
+  <a href="/schedule" class="card">
+    <div class="card-kicker">People</div>
+    <h3>Schedule Per Person</h3>
+    <p>See each volunteer’s assignments, contact details, remarks, and current point total in alphabetical order.</p>
+  </a>
+  <a href="/master" class="card">
+    <div class="card-kicker">Operations</div>
+    <h3>Master Sheet</h3>
+    <p>Review every task by day and time, including lead, helpers, and assigned-count status.</p>
+  </a>
+</div>
+{% endblock %}

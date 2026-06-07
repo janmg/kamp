@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% from "_messaging_icons.html" import messaging_icon %}
+{% block title %}Schema - Zomerkamp 2026{% endblock %}
+{% block content %}
+{% set day_names = {1: "Wednesday", 2: "Thursday", 3: "Friday", 4: "Saturday"} %}
+{% set is_admin = request.cookies.get('is_admin') == '1' %}
+<style>
+  .person-header { position: relative; }
+  .qr-small { cursor: pointer; border-radius: 4px; display: block; margin-left: 0.5rem; }
+  .qr-small:hover { opacity: 0.75; }
+  .name-filter-input {
+    padding: 0.45rem 0.6rem;
+    border: 1px solid #d0b24a;
+    border-radius: 8px;
+    min-width: 220px;
+    background: #fff4bf;
+  }
+  .name-filter-input:focus {
+    outline: 2px solid rgba(208, 178, 74, 0.45);
+    outline-offset: 1px;
+  }
+</style>
+<h2>Schema voor elke vrijwilliger</h2>
+<p class="intro">Alphabetische lijst van vrijwilligers en toegewezen taken.</p>
+
+<div class="meta" style="margin-bottom: 1rem; align-items: center; gap: 0.5rem;">
+  <label for="name-filter"><strong>Filter op naam:</strong></label>
+  <input id="name-filter" class="name-filter-input" type="search" placeholder="Type a name..." autocomplete="off" value="{{ name_filter|e }}">
+  <span id="filter-status" class="quiet"></span>
+</div>
+
+{% for person in people %}
+<div class="person-card" data-person-name="{{ person.name|lower }}">
+  <div class="person-header">
+    <div>
+      <strong class="is-name">{{ person.name }}</strong>
+      <div class="meta">
+        <span style="display:inline-flex; align-items:center; gap:0.3rem;">{{ messaging_icon(person.messaging) }}{{ person.phone }}</span>
+      </div>
+      {% if person.remarks != '-' %}
+      <div class="quiet" style="margin-top:0.35rem;">{{ person.remarks }}</div>
+      {% endif %}
+    </div>
+    {% if is_admin %}
+    <span class="pts">{{ person.total_points }} pts</span>
+    {% endif %}
+    <canvas class="qr-small" data-qr-url="{{ public_url }}/schedule?name={{ person.name|urlencode }}" data-person-name="{{ person.name }}" width="48" height="48" title="Show QR code for {{ person.name }}"></canvas>
+  </div>
+
+  {% if person.tasks %}
+  <table>
+    <thead>
+      <tr>
+        <th>Day</th>
+        <th>Time</th>
+        <th>Task</th>
+        <th>Role</th>
+        <th>With</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for task in person.tasks %}
+      <tr>
+        <td>{{ day_names[task.day] | default("Day " ~ task.day) }}</td>
+        <td>{{ task.begin }}-{{ task.end }}</td>
+        <td>
+          <strong>{{ task.name }}</strong>
+          {% if task.location %}
+          <div class="quiet" style="font-size:0.85rem; margin-top:0.15rem;">
+            <em>Loc: 
+              {% if task.location.startswith('http') %}
+                <a href="{{ task.location }}" target="_blank" rel="noopener">{{ task.location }}</a>
+              {% else %}
+                {{ task.location }}
+              {% endif %}
+            </em>
+          </div>
+          {% endif %}
+          {% if task.description %}
+          <div class="quiet" style="font-size:0.85rem; margin-top:0.1rem; color:#666;">
+            {{ task.description }}
+          </div>
+          {% endif %}
+        </td>
+        <td><span class="badge badge-{{ task.role }}">{{ task.role }}</span></td>
+        <td>
+          {% if task.task_lead or task.task_helpers %}
+            {% if task.task_lead %}
+            <div><a href="/schedule?name={{ task.task_lead | urlencode }}" style="color: var(--accent); text-decoration: none;">{{ task.task_lead }}</a> <span class="quiet">(lead)</span></div>
+            {% endif %}
+            {% for name in task.task_helpers %}
+            <div><a href="/schedule?name={{ name | urlencode }}" style="color: var(--accent); text-decoration: none;">{{ name }}</a></div>
+            {% endfor %}
+          {% else %}
+            <span class="quiet">-</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No assignments yet.</div>
+  {% endif %}
+</div>
+{% else %}
+<div class="empty">No participants found.</div>
+{% endfor %}
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+
+<!-- QR overlay -->
+<div id="qr-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:16px; padding:2rem; text-align:center; max-width:320px; width:90%; box-shadow:0 8px 32px rgba(0,0,0,0.25); position:relative;">
+    <button id="qr-close" aria-label="Close" style="position:absolute; top:0.75rem; right:0.75rem; background:none; border:none; font-size:1.4rem; cursor:pointer; color:#555;">&times;</button>
+    <div id="qr-name" style="font-weight:700; font-size:1.1rem; margin-bottom:1rem;"></div>
+    <canvas id="qr-canvas" style="display:block; margin:0 auto;"></canvas>
+    <div id="qr-url" style="margin-top:0.75rem; font-size:0.78rem; color:#666; word-break:break-all;"><a id="qr-url-link" href="#" style="color:#1a73e8; text-decoration:none;" target="_blank"></a></div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const input = document.getElementById("name-filter");
+    const status = document.getElementById("filter-status");
+    const cards = Array.from(document.querySelectorAll(".person-card[data-person-name]"));
+    const total = cards.length;
+
+    function updateStatus(visibleCount, query) {
+      if (!status) {
+        return;
+      }
+      if (!query) {
+        status.textContent = total ? "Showing all participants" : "";
+        return;
+      }
+      status.textContent = `${visibleCount} match${visibleCount === 1 ? "" : "es"}`;
+    }
+
+    function applyFilter() {
+      const query = (input?.value || "").trim().toLowerCase();
+      let visibleCount = 0;
+      for (const card of cards) {
+        const personName = card.dataset.personName || "";
+        const isVisible = !query || personName.includes(query);
+        card.style.display = isVisible ? "" : "none";
+        if (isVisible) {
+          visibleCount += 1;
+        }
+      }
+      updateStatus(visibleCount, query);
+    }
+
+    if (input) {
+      input.addEventListener("input", applyFilter);
+      applyFilter();
+      if (input.value) {
+        input.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    }
+
+    // QR overlay
+    const overlay = document.getElementById("qr-overlay");
+    const qrClose = document.getElementById("qr-close");
+    const qrCanvas = document.getElementById("qr-canvas");
+    const qrName = document.getElementById("qr-name");
+    const qrUrlLink = document.getElementById("qr-url-link");
+
+    document.querySelectorAll(".qr-small").forEach(function (canvas) {
+      QRCode.toCanvas(canvas, canvas.dataset.qrUrl, { width: 48, margin: 1 }, function () {});
+    });
+
+    document.querySelectorAll(".qr-small").forEach(function (canvas) {
+      canvas.addEventListener("click", function () {
+        const url = canvas.dataset.qrUrl;
+        const name = canvas.dataset.personName;
+        qrName.textContent = name;
+        qrUrlLink.href = url;
+        qrUrlLink.textContent = url;
+        overlay.style.display = "flex";
+        QRCode.toCanvas(qrCanvas, url, { width: 220, margin: 2 }, function () {});
+      });
+    });
+
+    function closeOverlay() { overlay.style.display = "none"; }
+    qrClose.addEventListener("click", closeOverlay);
+    overlay.addEventListener("click", function (e) { if (e.target === overlay) closeOverlay(); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeOverlay(); });
+  })();
+</script>
+{% endblock %}

@@ -1,0 +1,20 @@
+#!/sbin/openrc-run
+
+name="zomerkamp"
+description="Zomerkamp volunteer scheduling web app"
+
+command="/usr/src/zomerkamp/.venv/bin/python"
+command_args="/usr/src/zomerkamp/web/app.py"
+command_background=true
+command_user="root"
+
+directory="/usr/src/zomerkamp"
+
+pidfile="/run/${RC_SVCNAME}.pid"
+output_log="/var/log/${RC_SVCNAME}.log"
+error_log="/var/log/${RC_SVCNAME}.log"
+
+depend() {
+    need net
+    after logger
+}

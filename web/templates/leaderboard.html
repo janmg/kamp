@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "_messaging_icons.html" import messaging_icon %}
+{% block title %}Leaderboard - Zomerkamp 2026{% endblock %}
+{% block content %}
+<h2>Points Leaderboard</h2>
+<p class="intro">Participants are ranked by awarded points from lead and helper assignments.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Rank</th>
+      <th>Name</th>
+      <th>Contact</th>
+      <th>Tasks</th>
+      <th>Points</th>
+      <th>Remarks</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>
+        {% if row.rank == 1 %}1{% elif row.rank == 2 %}2{% elif row.rank == 3 %}3{% else %}{{ row.rank }}{% endif %}
+      </td>
+      <td><strong class="is-name">{{ row.name }}</strong></td>
+      <td>
+        <div>{{ row.email }}</div>
+        <div class="quiet" style="display:flex; align-items:center; gap:0.3rem;">{{ messaging_icon(row.messaging) }}{{ row.phone }}</div>
+      </td>
+      <td>{{ row.task_count }}</td>
+      <td><strong>{{ row.points }}</strong></td>
+      <td class="quiet">{{ row.remarks }}</td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="6" class="empty">No participants found.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

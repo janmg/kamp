@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% from "_messaging_icons.html" import messaging_icon %}
+{% block title %}Vrijwilligers - Zomerkamp 2026{% endblock %}
+{% block content %}
+
+<style>
+  .participants-table { width: 100%; border-collapse: collapse; }
+  .participants-table th, .participants-table td { padding: 0.6rem 0.8rem; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .participants-table th { background: var(--bg); font-weight: 700; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  .participants-table tr:last-child td { border-bottom: none; }
+  .participants-table tr:hover td { background: rgba(26,115,232,0.04); }
+  .phone-cell { display: flex; align-items: center; gap: 0.45rem; position: relative; }
+  .msg-icon-btn { background: none; border: none; padding: 2px; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; transition: opacity 0.15s; }
+  .msg-icon-btn:hover { opacity: 0.7; }
+  .saved-flash {
+    font-size: 0.75rem;
+    color: var(--secondary);
+    position: absolute;
+    right: -0.25rem;
+    top: -0.45rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+    background: #fff;
+    border-radius: 999px;
+    padding: 0 0.22rem;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+  }
+  .saved-flash.visible { opacity: 1; }
+  .group-balls { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+  .group-ball { min-width: 1.9rem; height: 1.7rem; border-radius: 999px; padding: 0 0.45rem; border: none; cursor: pointer; font-size: 0.72rem; font-weight: 700; background: var(--line); color: var(--muted); display: inline-flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; user-select: none; }
+  .group-ball.active { background: var(--accent); color: #fff; }
+  .group-ball.readonly { cursor: default; opacity: 0.9; }
+  .group-ball:hover:not(.active):not(.readonly) { background: rgba(26,115,232,0.18); color: var(--text); }
+  .qr-small { cursor: pointer; border-radius: 4px; display: block; }
+  .qr-small:hover { opacity: 0.75; }
+  .name-link { color: var(--accent); text-decoration: none; cursor: pointer; transition: color 0.15s; }
+  .name-link:hover { color: var(--accent-deep); text-decoration: underline; }
+</style>
+
+<h2>Vrijwilligers</h2>
+<div class="meta" style="margin-bottom: 0.75rem; align-items: center; gap: 0.5rem;">
+  <label for="p-filter"><strong>Filter:</strong></label>
+  <input id="p-filter" type="search" placeholder="Zoek op naam of telefoonnummer{% if is_admin %} or email{% endif %}…" autocomplete="off" style="padding:0.4rem 0.6rem; border:1px solid var(--line); border-radius:8px; min-width:240px;">
+  <span id="p-filter-status" class="quiet" style="font-size:0.82rem;"></span>
+</div>
+
+<div class="card" style="padding: 0; overflow: hidden;">
+  <table class="participants-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Group</th>
+        <th>Phone</th>
+        {% if is_admin %}<th>Email</th>{% endif %}
+        <th>QR</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for person in people %}
+      <tr data-person-id="{{ person.id }}" data-messaging="{{ person.messaging or 'whatsapp' }}" data-search="{% if is_admin %}{{ person.name|lower }} {{ person.phone or '' }} {{ person.email|lower }}{% else %}{{ person.name|lower }} {{ person.phone or '' }}{% endif %}">
+        <td><a href="/schedule?name={{ person.name|urlencode }}" class="name-link"><strong class="is-name">{{ person.name }}</strong></a></td>
+        <td>
+          <div class="group-balls" data-person-id="{{ person.id }}">
+            {% set active_groups = (person.group or '').split(',') %}
+            {% for g in groups %}
+            <button type="button" class="group-ball{% if g in active_groups %} active{% endif %}{% if not is_admin %} readonly{% endif %}" data-group="{{ g }}" {% if not is_admin %}disabled{% endif %}>{{ g }}</button>
+            {% endfor %}
+          </div>
+        </td>
+        <td>
+          <div class="phone-cell">
+            <button type="button" class="msg-icon-btn" title="Click to change messaging app">
+              {{ messaging_icon(person.messaging or 'whatsapp') }}
+            </button>
+            {% if person.phone %}
+            {% set _app = person.messaging or 'whatsapp' %}
+            {% set _digits = person.phone | replace('+', '') | replace(' ', '') | replace('-', '') %}
+            {% if _app == 'telegram' %}
+            {% set _href = 'https://t.me/+' ~ _digits %}
+            {% elif _app == 'signal' %}
+            {% set _href = 'https://signal.me/#p/+' ~ _digits %}
+            {% elif _app == 'sms' %}
+            {% set _href = 'sms:+' ~ _digits %}
+            {% else %}
+            {% set _href = 'https://wa.me/' ~ _digits %}
+            {% endif %}
+            <a href="{{ _href }}" target="_blank" rel="noopener" class="phone-link">{{ person.phone }}</a>
+            {% else %}
+            <span>-</span>
+            {% endif %}
+            <span class="saved-flash">✓</span>
+          </div>
+        </td>
+        {% if is_admin %}<td><a href="mailto:{{ person.email }}">{{ person.email }}</a></td>{% endif %}
+        <td><canvas class="qr-small" data-qr-url="{{ public_url }}/schedule?name={{ person.name|urlencode }}" data-person-name="{{ person.name }}" width="48" height="48"></canvas></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+
+<!-- QR overlay -->
+<div id="qr-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:16px; padding:2rem; text-align:center; max-width:320px; width:90%; box-shadow:0 8px 32px rgba(0,0,0,0.25); position:relative;">
+    <button id="qr-close" aria-label="Close" style="position:absolute; top:0.75rem; right:0.75rem; background:none; border:none; font-size:1.4rem; cursor:pointer; color:#555;">&times;</button>
+    <div id="qr-name" style="font-weight:700; font-size:1.1rem; margin-bottom:1rem;"></div>
+    <canvas id="qr-canvas" style="display:block; margin:0 auto;"></canvas>
+    <div id="qr-url" style="margin-top:0.75rem; font-size:0.78rem; color:#666; word-break:break-all;"><a id="qr-url-link" href="#" style="color:#1a73e8; text-decoration:none;" target="_blank"></a></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const CYCLE = ["whatsapp", "signal", "telegram", "sms"];
+
+  const ICONS = {
+    whatsapp: '<svg width="16" height="16" viewBox="0 0 24 24" fill="#25D366" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;flex-shrink:0;display:inline-block;" aria-label="WhatsApp" title="WhatsApp"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.118 1.522 5.851L.057 23.857a.5.5 0 00.603.602l6.098-1.527A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.882a9.875 9.875 0 01-5.031-1.373l-.36-.214-3.738.936.999-3.645-.235-.374A9.866 9.866 0 012.118 12C2.118 6.532 6.532 2.118 12 2.118c5.469 0 9.882 4.413 9.882 9.882 0 5.469-4.413 9.882-9.882 9.882z"/></svg>',
+    signal: '<svg width="16" height="16" viewBox="0 0 24 24" fill="#3A76F0" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;flex-shrink:0;display:inline-block;" aria-label="Signal" title="Signal"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm.19 18.794l-.395-.102a7.765 7.765 0 01-1.534-.59l-.357-.19-3.705.972.99-3.616-.207-.35A7.72 7.72 0 014.22 12c0-4.29 3.49-7.78 7.78-7.78 4.29 0 7.78 3.49 7.78 7.78 0 4.272-3.464 7.751-7.59 7.794z"/></svg>',
+    telegram: '<svg width="16" height="16" viewBox="0 0 24 24" fill="#2CA5E0" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;flex-shrink:0;display:inline-block;" aria-label="Telegram" title="Telegram"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.247l-2.01 9.47c-.148.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.19 14.078l-2.95-.924c-.64-.203-.653-.64.136-.948l11.52-4.44c.533-.194 1.001.13.666.481z"/></svg>',
+    sms: '<svg width="16" height="16" viewBox="0 0 24 24" fill="#34C759" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;flex-shrink:0;display:inline-block;" aria-label="SMS" title="SMS"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>',
+    none: ''
+  };
+
+  function getGroup(row) {
+    const balls = row.querySelectorAll(".group-ball.active");
+    return Array.from(balls).map(function (b) { return b.dataset.group; }).join(",");
+  }
+
+  function save(row, messaging, group) {
+    const personId = row.dataset.personId;
+    const fd = new FormData();
+    fd.append("participant_id", personId);
+    fd.append("messaging", messaging);
+    fd.append("group", group);
+    fetch("/participants", { method: "POST", body: fd }).then(function (r) {
+      if (r.ok) {
+        const flash = row.querySelector(".saved-flash");
+        flash.classList.add("visible");
+        setTimeout(function () { flash.classList.remove("visible"); }, 1800);
+      }
+    });
+  }
+
+  function msgUrl(app, phone) {
+    const digits = phone.replace(/[\s+\-]/g, "");
+    if (app === "telegram") return "https://t.me/+" + digits;
+    if (app === "signal") return "https://signal.me/#p/+" + digits;
+    if (app === "sms") return "sms:+" + digits;
+    return "https://wa.me/" + digits;
+  }
+
+  // Messaging icon: click to cycle
+  document.querySelectorAll(".msg-icon-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      const row = btn.closest("tr");
+      const current = row.dataset.messaging || "whatsapp";
+      const idx = CYCLE.indexOf(current);
+      const next = CYCLE[(idx + 1) % CYCLE.length];
+      row.dataset.messaging = next;
+      btn.innerHTML = ICONS[next] || "";
+      const link = row.querySelector(".phone-link");
+      if (link) {
+        const phone = link.textContent.trim();
+        link.href = msgUrl(next, phone);
+      }
+      save(row, next, getGroup(row));
+    });
+  });
+
+  // Group balls: toggle and auto-save
+  document.querySelectorAll(".group-balls").forEach(function (container) {
+    container.querySelectorAll(".group-ball").forEach(function (ball) {
+      ball.addEventListener("click", function () {
+        ball.classList.toggle("active");
+        const row = container.closest("tr");
+        save(row, row.dataset.messaging || "whatsapp", getGroup(row));
+      });
+    });
+  });
+
+  // Small QR codes
+  document.querySelectorAll(".qr-small").forEach(function (canvas) {
+    QRCode.toCanvas(canvas, canvas.dataset.qrUrl, { width: 48, margin: 1 }, function () {});
+  });
+
+  // QR overlay
+  const overlay = document.getElementById("qr-overlay");
+  const qrClose = document.getElementById("qr-close");
+  const qrCanvas = document.getElementById("qr-canvas");
+  const qrName = document.getElementById("qr-name");
+  const qrUrlLink = document.getElementById("qr-url-link");
+
+  document.querySelectorAll(".qr-small").forEach(function (canvas) {
+    canvas.addEventListener("click", function () {
+      const url = canvas.dataset.qrUrl;
+      const name = canvas.dataset.personName;
+      qrName.textContent = name;
+      qrUrlLink.href = url;
+      qrUrlLink.textContent = url;
+      overlay.style.display = "flex";
+      QRCode.toCanvas(qrCanvas, url, { width: 220, margin: 2 }, function () {});
+    });
+  });
+
+  function closeOverlay() { overlay.style.display = "none"; }
+  qrClose.addEventListener("click", closeOverlay);
+  overlay.addEventListener("click", function (e) { if (e.target === overlay) closeOverlay(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeOverlay(); });
+
+  // Name / phone / email filter
+  const filterInput = document.getElementById("p-filter");
+  const filterStatus = document.getElementById("p-filter-status");
+  const allRows = Array.from(document.querySelectorAll("tr[data-search]"));
+  filterInput.addEventListener("input", function () {
+    const q = filterInput.value.trim().toLowerCase();
+    let visible = 0;
+    allRows.forEach(function (row) {
+      const match = !q || (row.dataset.search || "").includes(q);
+      row.style.display = match ? "" : "none";
+      if (match) visible++;
+    });
+    filterStatus.textContent = q ? visible + " match" + (visible === 1 ? "" : "es") : "";
+  });
+})();
+</script>
+{% endblock %}
