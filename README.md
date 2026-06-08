@@ -370,7 +370,7 @@ Use cloud api? REST API
 2. Use kamp.ntc.fi with cname to server
 3. Add more useful links, schedules
 4. Send messages over twillio, personlized links, personalized calendar invites?
-5. Integrate with Peter's screens
+5. Integrate with screens
 6. Edit tasks and times, names
 7. Helemaal in het nederlands
 8. Logische links
@@ -383,4 +383,8 @@ Use cloud api? REST API
 15. Maak lijst met wie er nu beschikbaar is
 16. Normalize capitalization, take belgium caps into account
 17. Tables op telefoon passend krijgen.
-18. Ho, ik kan niet knopje
+18. Ho, ik kan dan niet knopje
+19. Marktplaats, wie kan dit van me overnemen?
+20. 1x persoon kunnen wisselen.
+21. personen kunnen toevoegen aan taak en als vrijwilliger
+22. directe feedback kunnen toepassen.
